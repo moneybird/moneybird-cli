@@ -156,7 +156,3 @@ Add to your shell profile for tab completion of resources, actions, and paramete
 eval "$(moneybird-cli completion bash)"   # ~/.bashrc
 eval "$(moneybird-cli completion zsh)"    # ~/.zshrc
 ```
-
-## License
-
-MIT
