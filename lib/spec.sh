@@ -1,0 +1,84 @@
+#!/usr/bin/env bash
+# OpenAPI spec fetching, caching, and querying
+
+SPEC_FILE="$CONFIG_DIR/openapi.json"
+SPEC_ETAG_FILE="$CONFIG_DIR/spec_etag"
+SPEC_URL="https://raw.githubusercontent.com/moneybird/openapi/refs/heads/main/openapi.json"
+SPEC_MAX_AGE=86400 # 24 hours
+
+spec_ensure() {
+  if [[ ! -f "$SPEC_FILE" ]]; then
+    echo "No cached spec found. Fetching..." >&2
+    spec_update
+    return $?
+  fi
+
+  local mod_time now age
+  if [[ "$(uname)" == "Darwin" ]]; then
+    mod_time=$(stat -f %m "$SPEC_FILE")
+  else
+    mod_time=$(stat -c %Y "$SPEC_FILE")
+  fi
+  now=$(date +%s)
+  age=$((now - mod_time))
+
+  if (( age > SPEC_MAX_AGE )); then
+    [[ -n "$OPT_VERBOSE" ]] && echo "Spec is stale, updating in background..." >&2
+    spec_update &>/dev/null &
+  fi
+}
+
+spec_update() {
+  local etag_args=()
+  if [[ -f "$SPEC_ETAG_FILE" ]]; then
+    etag_args=(-H "If-None-Match: $(cat "$SPEC_ETAG_FILE")")
+  fi
+
+  local tmp_file headers_file
+  tmp_file=$(mktemp)
+  headers_file=$(mktemp)
+  trap 'rm -f "$tmp_file" "$headers_file"' RETURN
+
+  local http_code
+  http_code=$(curl -s -w "%{http_code}" -o "$tmp_file" -D "$headers_file" \
+    ${etag_args[@]+"${etag_args[@]}"} \
+    "$SPEC_URL")
+
+  if [[ "$http_code" == "304" ]]; then
+    [[ -n "$OPT_VERBOSE" ]] && echo "Spec is up to date." >&2
+    touch "$SPEC_FILE"
+    return 0
+  fi
+
+  if [[ "$http_code" != "200" ]]; then
+    echo "Error: Failed to fetch spec (HTTP $http_code)" >&2
+    return 1
+  fi
+
+  # Validate it's valid JSON
+  if ! jq '.' "$tmp_file" > /dev/null 2>&1; then
+    echo "Error: Fetched spec is not valid JSON" >&2
+    return 1
+  fi
+
+  # Extract and store ETag
+  local new_etag
+  new_etag=$(grep -i '^etag:' "$headers_file" | sed 's/^[^:]*: *//;s/\r$//')
+  [[ -n "$new_etag" ]] && echo "$new_etag" > "$SPEC_ETAG_FILE"
+
+  mv "$tmp_file" "$SPEC_FILE"
+  echo "Spec updated successfully." >&2
+}
+
+# Derive the API base path from the spec's servers field
+spec_api_prefix() {
+  local prefix
+  prefix=$(jq -r '.servers[0].url // "https://moneybird.com/api/v2"' "$SPEC_FILE" 2>/dev/null)
+  # Strip the host, keep only the path portion
+  echo "$prefix" | sed -E 's|https?://[^/]+||'
+}
+
+spec_query() {
+  # Pass all arguments through to jq (supports --arg, etc.)
+  jq -r "$@" "$SPEC_FILE"
+}

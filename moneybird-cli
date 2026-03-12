@@ -1,0 +1,228 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+VERSION="0.1"
+
+# Resolve the directory where this script lives
+CLI_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Source library files
+for lib in config oauth spec router request output help; do
+  source "$CLI_DIR/lib/${lib}.sh"
+done
+
+# Global option defaults
+OPT_DEV=""
+OPT_ADMINISTRATION=""
+OPT_OUTPUT="${MONEYBIRD_OUTPUT:-pretty}"
+OPT_VERBOSE=""
+OPT_DRY_RUN=""
+OPT_SELECT=""
+OPT_FIELDS=""
+OPT_ALL=""
+OPT_CHILD_ID=""
+
+# Parse global flags (before resource/action)
+POSITIONAL=()
+PARAMS=()
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --dev)
+      OPT_DEV=1; shift ;;
+    --administration)
+      OPT_ADMINISTRATION="$2"; shift 2 ;;
+    --output)
+      OPT_OUTPUT="$2"; shift 2 ;;
+    --select)
+      OPT_SELECT="$2"; shift 2 ;;
+    --fields)
+      OPT_FIELDS="$2"; shift 2 ;;
+    --all)
+      OPT_ALL=1; shift ;;
+    --verbose)
+      OPT_VERBOSE=1; shift ;;
+    --dry-run)
+      OPT_DRY_RUN=1; shift ;;
+    --child-id)
+      OPT_CHILD_ID="$2"; shift 2 ;;
+    --version|-v)
+      echo "moneybird-cli $VERSION"; exit 0 ;;
+    --help|-h)
+      # Help flag — will be handled after determining context
+      POSITIONAL+=(--help); shift ;;
+    --*)
+      # Collect remaining --key value pairs as API params
+      if [[ $# -ge 2 && ! "$2" =~ ^-- ]]; then
+        PARAMS+=("$1" "$2"); shift 2
+      else
+        PARAMS+=("$1" "true"); shift
+      fi
+      ;;
+    *)
+      POSITIONAL+=("$1"); shift ;;
+  esac
+done
+
+# Initialize config
+config_init
+
+# Extract positional arguments
+RESOURCE="${POSITIONAL[0]:-}"
+ACTION="${POSITIONAL[1]:-}"
+ID="${POSITIONAL[2]:-}"
+
+# Check dependencies
+check_deps() {
+  local missing=()
+  for cmd in curl jq; do
+    command -v "$cmd" &>/dev/null || missing+=("$cmd")
+  done
+  if [[ ${#missing[@]} -gt 0 ]]; then
+    echo "Error: Missing required dependencies: ${missing[*]}" >&2
+    echo "Install with: brew install ${missing[*]}" >&2
+    exit 1
+  fi
+}
+
+# Route to built-in commands or dynamic API
+main() {
+  check_deps
+
+  # No arguments or --help at top level
+  if [[ -z "$RESOURCE" || "$RESOURCE" == "--help" ]]; then
+    help_global
+    exit 0
+  fi
+
+  case "$RESOURCE" in
+    login)
+      if [[ "$ACTION" == "--help" ]]; then
+        echo "Usage: moneybird-cli login [token]"
+        echo ""
+        echo "  login                 Authenticate with a personal API token"
+        echo "  login <token>         Authenticate with token directly"
+        echo "  login --oauth         Authenticate via OAuth (requires client app)"
+        exit 0
+      fi
+      if [[ ${#PARAMS[@]} -gt 0 && "${PARAMS[0]}" == "--oauth" ]]; then
+        oauth_login
+      else
+        oauth_login_token "${ACTION:-}"
+      fi
+      ;;
+    logout)
+      oauth_logout
+      ;;
+    update-spec)
+      spec_update
+      ;;
+    completion)
+      cmd_completion "${ACTION:-bash}"
+      ;;
+    config)
+      cmd_config "$ACTION" "$ID" "${POSITIONAL[3]:-}"
+      ;;
+    administration)
+      cmd_administration "$ACTION" "$ID"
+      ;;
+    administrations)
+      if [[ "$ACTION" == "--help" ]]; then
+        echo "Usage: moneybird-cli administrations list"
+        exit 0
+      fi
+      spec_ensure
+      route_resolve "administrations" "${ACTION:-list}" "" || exit 1
+      request_execute "$ROUTE_METHOD" "$ROUTE_URL" ${PARAMS[@]+"${PARAMS[@]}"}
+      ;;
+    *)
+      # Help for resource or action
+      if [[ "$ACTION" == "--help" ]]; then
+        help_resource "$RESOURCE"
+        exit 0
+      fi
+      if [[ -z "$ACTION" ]]; then
+        help_resource "$RESOURCE"
+        exit 0
+      fi
+      if [[ "$ID" == "--help" || "${POSITIONAL[3]:-}" == "--help" ]]; then
+        help_action "$RESOURCE" "$ACTION"
+        exit 0
+      fi
+
+      # Dynamic API call
+      spec_ensure
+      route_resolve "$RESOURCE" "$ACTION" "$ID" || exit 1
+
+      # Auto-paginate with --all for GET list endpoints
+      if [[ -n "$OPT_ALL" && "$ROUTE_METHOD" == "GET" ]]; then
+        request_paginate "$ROUTE_URL" ${PARAMS[@]+"${PARAMS[@]}"}
+      else
+        request_execute "$ROUTE_METHOD" "$ROUTE_URL" ${PARAMS[@]+"${PARAMS[@]}"}
+      fi
+      ;;
+  esac
+}
+
+cmd_config() {
+  local action="$1" key="$2" value="$3"
+  case "$action" in
+    get)
+      [[ -z "$key" ]] && { echo "Usage: moneybird-cli config get <key>" >&2; exit 1; }
+      config_get "$key"
+      ;;
+    set)
+      [[ -z "$key" || -z "$value" ]] && { echo "Usage: moneybird-cli config set <key> <value>" >&2; exit 1; }
+      config_set "$key" "$value"
+      echo "Set $key = $value"
+      ;;
+    *)
+      echo "Usage: moneybird-cli config <get|set> <key> [value]" >&2
+      exit 1
+      ;;
+  esac
+}
+
+cmd_completion() {
+  local shell="$1"
+  case "$shell" in
+    bash) cat "$CLI_DIR/completions/moneybird-cli.bash" ;;
+    zsh)  cat "$CLI_DIR/completions/moneybird-cli.zsh" ;;
+    *)
+      echo "Usage: moneybird-cli completion <bash|zsh>" >&2
+      echo "" >&2
+      echo "  eval \"\$(moneybird-cli completion bash)\"   # add to ~/.bashrc" >&2
+      echo "  eval \"\$(moneybird-cli completion zsh)\"    # add to ~/.zshrc" >&2
+      exit 1
+      ;;
+  esac
+}
+
+cmd_administration() {
+  local action="$1" id="$2"
+  case "$action" in
+    use)
+      [[ -z "$id" ]] && { echo "Usage: moneybird-cli administration use <id>" >&2; exit 1; }
+      config_set current_administration_id "$id"
+      echo "Administration set to $id"
+      ;;
+    current)
+      local current
+      current=$(config_get current_administration_id)
+      if [[ -n "$current" ]]; then
+        echo "$current"
+      else
+        echo "No administration selected." >&2
+        echo "Run: moneybird-cli administrations list" >&2
+        echo "Then: moneybird-cli administration use <id>" >&2
+        exit 1
+      fi
+      ;;
+    *)
+      echo "Usage: moneybird-cli administration <use|current> [id]" >&2
+      exit 1
+      ;;
+  esac
+}
+
+main
