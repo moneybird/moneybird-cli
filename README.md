@@ -27,7 +27,7 @@ curl -fsSL https://raw.githubusercontent.com/moneybird/moneybird-cli/main/instal
 
 ### 1. Authenticate
 
-Create a personal API token in Moneybird under **Settings > Developer > API tokens**, then:
+Create a personal API token in Moneybird under **Settings > External applications and AI connections > New API token**, then:
 
 ```bash
 moneybird-cli login <your-token>

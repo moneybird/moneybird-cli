@@ -3,8 +3,14 @@ set -euo pipefail
 
 VERSION="0.1"
 
-# Resolve the directory where this script lives
-CLI_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Resolve the directory where this script lives (follow symlinks)
+SOURCE="${BASH_SOURCE[0]}"
+while [[ -L "$SOURCE" ]]; do
+  CLI_DIR="$(cd "$(dirname "$SOURCE")" && pwd)"
+  SOURCE="$(readlink "$SOURCE")"
+  [[ "$SOURCE" != /* ]] && SOURCE="$CLI_DIR/$SOURCE"
+done
+CLI_DIR="$(cd "$(dirname "$SOURCE")" && pwd)"
 
 # Source library files
 for lib in config oauth spec router request output help; do
