@@ -86,7 +86,7 @@ check_deps() {
   done
   if [[ ${#missing[@]} -gt 0 ]]; then
     echo "Error: Missing required dependencies: ${missing[*]}" >&2
-    echo "Install with: brew install ${missing[*]}" >&2
+    echo "Install with: brew install ${missing[*]} (macOS) or sudo apt-get install ${missing[*]} (Debian/Ubuntu)" >&2
     exit 1
   fi
 }

@@ -21,7 +21,7 @@ curl -fsSL https://raw.githubusercontent.com/moneybird/moneybird-cli/main/instal
 
 - `bash` 3.2+ (macOS default works)
 - `curl`
-- `jq` — install with `brew install jq` (macOS) or `apt install jq` (Linux)
+- `jq` — install with `brew install jq` (macOS) or `sudo apt-get install jq` (Debian/Ubuntu)
 
 ## Getting started
 

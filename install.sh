@@ -9,7 +9,7 @@ echo "Installing moneybird-cli to $INSTALL_DIR..."
 # Check dependencies
 for cmd in curl jq; do
   if ! command -v "$cmd" &>/dev/null; then
-    echo "Error: $cmd is required. Install with: brew install $cmd" >&2
+    echo "Error: $cmd is required. Install with: brew install $cmd (macOS) or sudo apt-get install $cmd (Debian/Ubuntu)" >&2
     exit 1
   fi
 done
