@@ -33,7 +33,12 @@ Create a personal API token in Moneybird under **Settings > External application
 moneybird-cli login <your-token>
 ```
 
-This will verify the token and automatically select your administration.
+This will verify the token and automatically select your administration. If you have access to multiple administrations, switch between them with:
+
+```bash
+moneybird-cli administration list
+moneybird-cli administration use <id>
+```
 
 ### 2. Start using the API
 
@@ -46,7 +51,7 @@ moneybird-cli contacts create --company_name "Acme Corp"
 ## Usage
 
 ```
-moneybird-cli [options] <resource> <action> [id] [--param value...]
+moneybird-cli [options] <resource> <action> [args...] [--param value...]
 ```
 
 ### Actions
@@ -107,8 +112,8 @@ moneybird-cli sales_invoices list --all --fields id,invoice_id,total_price_incl_
 # Filter with jq
 moneybird-cli contacts list --select '[.[] | select(.company_name | test("Acme"))]'
 
-# Sub-resources
-moneybird-cli contacts:notes list 123456
+# Add a note to a contact (sub-resource)
+moneybird-cli contacts:notes create 123456 --note "Called about invoice"
 
 # Dry run to inspect the request
 moneybird-cli sales_invoices create --dry-run --contact_id 789 --reference "Test"
@@ -137,8 +142,8 @@ Config is stored in `~/.config/moneybird-cli/`:
 
 | File | Purpose |
 |------|---------|
-| `config.json` | Administration ID, client credentials, preferences |
-| `tokens_*.json` | Access tokens (per host) |
+| `config.json` | Client credentials and preferences |
+| `sessions_*.json` | Sessions with tokens per administration (per host) |
 | `openapi.json` | Cached API spec |
 
 Override the config directory with `MONEYBIRD_CONFIG_DIR`.
