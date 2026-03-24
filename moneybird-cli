@@ -118,7 +118,7 @@ main() {
       fi
       ;;
     logout)
-      oauth_logout
+      oauth_logout "${ACTION:-}"
       ;;
     update-spec)
       spec_update
@@ -131,15 +131,6 @@ main() {
       ;;
     administration)
       cmd_administration "$ACTION" "$ID"
-      ;;
-    administrations)
-      if [[ "$ACTION" == "--help" ]]; then
-        echo "Usage: moneybird-cli administrations list"
-        exit 0
-      fi
-      spec_ensure
-      route_resolve "administrations" "${ACTION:-list}" "" || exit 1
-      request_execute "$ROUTE_METHOD" "$ROUTE_URL" ${PARAMS[@]+"${PARAMS[@]}"}
       ;;
     *)
       # Help for resource or action
@@ -207,25 +198,37 @@ cmd_completion() {
 cmd_administration() {
   local action="$1" id="$2"
   case "$action" in
+    list)
+      sessions_list
+      ;;
     use)
       [[ -z "$id" ]] && { echo "Usage: moneybird-cli administration use <id>" >&2; exit 1; }
-      config_set current_administration_id "$id"
-      echo "Administration set to $id"
+      sessions_use "$id" || exit 1
+      local sessions_file
+      sessions_file=$(config_sessions_file)
+      local name
+      name=$(jq -r --arg id "$id" '.sessions[$id].administration_name' "$sessions_file")
+      echo "Switched to: $name ($id)"
       ;;
     current)
-      local current
-      current=$(config_get current_administration_id)
-      if [[ -n "$current" ]]; then
-        echo "$current"
-      else
-        echo "No administration selected." >&2
-        echo "Run: moneybird-cli administrations list" >&2
-        echo "Then: moneybird-cli administration use <id>" >&2
+      local sessions_file
+      sessions_file=$(config_sessions_file)
+      if [[ ! -f "$sessions_file" ]]; then
+        echo "Not logged in. Run: moneybird-cli login <token>" >&2
         exit 1
       fi
+      local current
+      current=$(jq -r '.current // empty' "$sessions_file")
+      if [[ -z "$current" ]]; then
+        echo "No administration selected." >&2
+        exit 1
+      fi
+      local name
+      name=$(jq -r --arg id "$current" '.sessions[$id].administration_name' "$sessions_file")
+      echo "$name ($current)"
       ;;
     *)
-      echo "Usage: moneybird-cli administration <use|current> [id]" >&2
+      echo "Usage: moneybird-cli administration <list|use|current> [id]" >&2
       exit 1
       ;;
   esac

@@ -15,30 +15,39 @@ oauth_login_token() {
     return 1
   fi
 
-  local tokens_file
-  tokens_file=$(config_tokens_file)
+  echo "Testing connection..."
 
-  # Store as non-expiring token (expires_at = 0 signals no expiry)
-  jq -n --arg t "$token" '{access_token: $t, token_type: "bearer", expires_at: 0}' > "$tokens_file"
-  chmod 600 "$tokens_file"
-
-  echo "Token saved. Testing connection..."
-
-  # Verify the token works
   local host
   host=$(config_get_host)
   local api_prefix
   api_prefix=$(spec_api_prefix)
+  local response_file
+  response_file=$(mktemp)
   local http_code
-  http_code=$(request_curl "$token" -s -o /dev/null -w "%{http_code}" "${host}${api_prefix}/administrations.json")
+  http_code=$(request_curl "$token" -s -o "$response_file" -w "%{http_code}" "${host}${api_prefix}/administrations.json")
 
-  if [[ "$http_code" =~ ^2 ]]; then
-    echo "Login successful!"
-    spec_update &>/dev/null &
-  else
-    echo "Warning: Token verification returned HTTP $http_code." >&2
-    echo "The token has been saved but may not be valid." >&2
+  if [[ ! "$http_code" =~ ^2 ]]; then
+    rm -f "$response_file"
+    echo "Error: Token verification returned HTTP $http_code." >&2
+    return 1
   fi
+
+  local admin_id admin_name
+  admin_id=$(jq -r '.[0].id' "$response_file")
+  admin_name=$(jq -r '.[0].name' "$response_file")
+  rm -f "$response_file"
+
+  if [[ -z "$admin_id" || "$admin_id" == "null" ]]; then
+    echo "Error: No administration found for this token." >&2
+    return 1
+  fi
+
+  local token_data
+  token_data=$(jq -n --arg t "$token" '{access_token: $t, token_type: "bearer", expires_at: 0}')
+  sessions_store "$admin_id" "$admin_name" "$token_data"
+
+  echo "Logged in to: $admin_name ($admin_id)"
+  spec_update &>/dev/null &
 }
 
 oauth_login() {
@@ -86,76 +95,139 @@ BODY
     -d @"$body_file")
   rm -f "$body_file"
 
-  if echo "$response" | jq -e '.access_token' &>/dev/null; then
-    oauth_store_tokens "$response"
-    echo "Login successful!"
-    spec_update &>/dev/null &
-  else
+  if ! echo "$response" | jq -e '.access_token' &>/dev/null; then
     echo "Login failed:" >&2
     echo "$response" | jq -r '.error_description // .error // "Unknown error"' >&2
     return 1
   fi
+
+  # Fetch administration for this token
+  local token
+  token=$(echo "$response" | jq -r '.access_token')
+  local api_prefix
+  api_prefix=$(spec_api_prefix)
+  local admin_response
+  admin_response=$(mktemp)
+  request_curl "$token" -s -o "$admin_response" "${host}${api_prefix}/administrations.json"
+
+  local admin_id admin_name
+  admin_id=$(jq -r '.[0].id' "$admin_response")
+  admin_name=$(jq -r '.[0].name' "$admin_response")
+  rm -f "$admin_response"
+
+  if [[ -z "$admin_id" || "$admin_id" == "null" ]]; then
+    echo "Error: No administration found for this token." >&2
+    return 1
+  fi
+
+  local expires_in expires_at
+  expires_in=$(echo "$response" | jq -r '.expires_in // 7200')
+  expires_at=$(($(date +%s) + expires_in))
+
+  local token_data
+  token_data=$(echo "$response" | jq --argjson ea "$expires_at" '{access_token, refresh_token, token_type, expires_at: $ea}')
+  sessions_store "$admin_id" "$admin_name" "$token_data"
+
+  echo "Logged in to: $admin_name ($admin_id)"
+  spec_update &>/dev/null &
 }
 
 oauth_logout() {
-  local tokens_file
-  tokens_file=$(config_tokens_file)
+  local target="$1"
 
-  if [[ ! -f "$tokens_file" ]]; then
+  if [[ "$target" == "--all" ]]; then
+    sessions_remove_all
+    echo "Logged out of all administrations."
+    return 0
+  fi
+
+  if [[ -n "$target" ]]; then
+    local sessions_file
+    sessions_file=$(config_sessions_file)
+    if [[ -f "$sessions_file" ]]; then
+      local name
+      name=$(jq -r --arg id "$target" '.sessions[$id].administration_name // empty' "$sessions_file")
+      if [[ -z "$name" ]]; then
+        echo "Error: No session for administration $target" >&2
+        return 1
+      fi
+      sessions_remove "$target"
+      echo "Logged out of: $name ($target)"
+    else
+      echo "Not logged in."
+    fi
+    return 0
+  fi
+
+  # No target specified: if one session, remove it; if multiple, ask
+  local sessions_file
+  sessions_file=$(config_sessions_file)
+  if [[ ! -f "$sessions_file" ]]; then
     echo "Not logged in."
     return 0
   fi
 
-  rm -f "$tokens_file"
-  echo "Logged out."
-}
+  local count
+  count=$(jq '.sessions | length' "$sessions_file")
 
-oauth_store_tokens() {
-  local response="$1"
-  local tokens_file
-  tokens_file=$(config_tokens_file)
+  if [[ "$count" == "0" ]]; then
+    echo "Not logged in."
+    return 0
+  fi
 
-  local expires_in
-  expires_in=$(echo "$response" | jq -r '.expires_in // 7200')
-  local expires_at
-  expires_at=$(($(date +%s) + expires_in))
+  if [[ "$count" == "1" ]]; then
+    local name id
+    id=$(jq -r '.sessions | keys[0]' "$sessions_file")
+    name=$(jq -r '.sessions[.sessions | keys[0]].administration_name' "$sessions_file")
+    sessions_remove_all
+    echo "Logged out of: $name ($id)"
+    return 0
+  fi
 
-  echo "$response" | jq --argjson ea "$expires_at" '. + {expires_at: $ea}' > "$tokens_file"
-  chmod 600 "$tokens_file"
+  echo "Multiple sessions active:"
+  sessions_list
+  echo ""
+  echo "Specify which to log out of:"
+  echo "  moneybird-cli logout <id>"
+  echo "  moneybird-cli logout --all"
 }
 
 oauth_get_token() {
-  local tokens_file
-  tokens_file=$(config_tokens_file)
+  local token
+  token=$(sessions_get_token)
 
-  if [[ ! -f "$tokens_file" ]]; then
+  if [[ -z "$token" ]]; then
     echo "Error: Not logged in. Run: moneybird-cli login" >&2
     return 1
   fi
 
   local expires_at
-  expires_at=$(jq -r '.expires_at // 0' "$tokens_file")
+  expires_at=$(sessions_get_expires_at)
 
-  # expires_at == 0 means non-expiring token (e.g. from --token login)
+  # expires_at == 0 means non-expiring token (personal token)
   if (( expires_at > 0 )); then
     local now
     now=$(date +%s)
     if (( now >= expires_at - 60 )); then
       oauth_refresh || return 1
+      token=$(sessions_get_token)
     fi
   fi
 
-  jq -r '.access_token' "$tokens_file"
+  echo "$token"
 }
 
 oauth_refresh() {
-  local tokens_file
-  tokens_file=$(config_tokens_file)
   local host
   host=$(config_get_host)
 
+  local sessions_file
+  sessions_file=$(config_sessions_file)
+  local admin_id
+  admin_id=$(jq -r '.current // empty' "$sessions_file")
+
   local refresh_token
-  refresh_token=$(jq -r '.refresh_token // empty' "$tokens_file")
+  refresh_token=$(jq -r --arg id "$admin_id" '.sessions[$id].refresh_token // empty' "$sessions_file")
 
   if [[ -z "$refresh_token" ]]; then
     echo "Error: No refresh token available." >&2
@@ -185,7 +257,12 @@ BODY
   rm -f "$body_file"
 
   if echo "$response" | jq -e '.access_token' &>/dev/null; then
-    oauth_store_tokens "$response"
+    local expires_in expires_at
+    expires_in=$(echo "$response" | jq -r '.expires_in // 7200')
+    expires_at=$(($(date +%s) + expires_in))
+    local token_data
+    token_data=$(echo "$response" | jq --argjson ea "$expires_at" '{access_token, refresh_token, token_type, expires_at: $ea}')
+    sessions_update_token "$token_data"
     spec_update &>/dev/null &
     return 0
   else

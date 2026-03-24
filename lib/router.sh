@@ -72,10 +72,8 @@ route_resolve() {
   local resource="$1" action="$2" id="${3:-}"
 
   local admin_id=""
-  if [[ "$resource" != "administrations" ]]; then
-    admin_id=$(config_get_admin_id) || return 1
-    validate_path_segment "$admin_id" "administration ID" || return 1
-  fi
+  admin_id=$(config_get_admin_id) || return 1
+  validate_path_segment "$admin_id" "administration ID" || return 1
   validate_path_segment "$id" "ID" || return 1
 
   local host api_prefix
@@ -100,17 +98,6 @@ route_resolve() {
   # Try standard CRUD first
   local method
   if method=$(crud_method "$action"); then
-    if [[ "$resource" == "administrations" ]]; then
-      local spec_path="/administrations{format}"
-      if [[ -z "$(spec_find_path "$spec_path")" ]]; then
-        echo "Error: 'administrations ${action}' is not a valid API endpoint" >&2
-        return 1
-      fi
-      ROUTE_METHOD="$method"
-      ROUTE_URL="${host}${api_prefix}/administrations.json"
-      return 0
-    fi
-
     if [[ -n "$parent" ]]; then
       route_sub_resource "$method" "$host" "$api_prefix" "$admin_id" "$parent" "$parent_id" "$resource_path" "$action" "$id"
       return $?
@@ -146,8 +133,31 @@ route_resolve() {
 
     ROUTE_METHOD="$method"
     ROUTE_URL="${host}${path}"
+    ROUTE_SPEC_PATH="$spec_path"
     return 0
   fi
+
+  # Sync aliases: sync → GET synchronization, sync_fetch → POST synchronization
+  case "$action" in
+    sync)
+      local sync_path="/{administration_id}/${resource_path}/synchronization{format}"
+      local sync_url
+      sync_url=$(spec_path_to_url "$sync_path" "$api_prefix" "$admin_id")
+      ROUTE_METHOD="GET"
+      ROUTE_URL="${host}${sync_url}"
+      ROUTE_SPEC_PATH="$sync_path"
+      return 0
+      ;;
+    sync_fetch)
+      local sync_path="/{administration_id}/${resource_path}/synchronization{format}"
+      local sync_url
+      sync_url=$(spec_path_to_url "$sync_path" "$api_prefix" "$admin_id")
+      ROUTE_METHOD="POST"
+      ROUTE_URL="${host}${sync_url}"
+      ROUTE_SPEC_PATH="$sync_path"
+      return 0
+      ;;
+  esac
 
   # Custom action — fully spec-driven lookup
   route_custom_action "$host" "$api_prefix" "$admin_id" "$resource_path" "$action" "$id" "$parent" "$parent_id"
@@ -200,6 +210,7 @@ route_sub_resource() {
 
   ROUTE_METHOD="$method"
   ROUTE_URL="${host}${actual_path}"
+  ROUTE_SPEC_PATH="$found_path"
 }
 
 route_custom_action() {
@@ -229,6 +240,7 @@ route_custom_action() {
 
       ROUTE_METHOD="$method"
       ROUTE_URL="${host}${actual_path}"
+      ROUTE_SPEC_PATH="$candidate"
       return 0
     fi
   done
@@ -253,6 +265,7 @@ route_custom_action() {
 
     ROUTE_METHOD=$(echo "$found_method" | tr '[:lower:]' '[:upper:]')
     ROUTE_URL="${host}${actual_path}"
+    ROUTE_SPEC_PATH="$found_path"
     return 0
   fi
 

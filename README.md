@@ -33,14 +33,9 @@ Create a personal API token in Moneybird under **Settings > External application
 moneybird-cli login <your-token>
 ```
 
-### 2. Select an administration
+This will verify the token and automatically select your administration.
 
-```bash
-moneybird-cli administrations list
-moneybird-cli administration use <id>
-```
-
-### 3. Start using the API
+### 2. Start using the API
 
 ```bash
 moneybird-cli contacts list

@@ -177,7 +177,7 @@ request_build_params() {
 
   # POST/PATCH/PUT — find wrapper key from spec and build JSON body
   local wrapper_key
-  wrapper_key=$(request_find_wrapper_key "$url")
+  wrapper_key=$(request_find_wrapper_key)
 
   local body_obj="{}"
   local i=0
@@ -204,21 +204,10 @@ request_build_params() {
 }
 
 request_find_wrapper_key() {
-  local url="$1"
-
-  # Convert actual URL to spec path pattern for lookup
-  local api_prefix
-  api_prefix=$(spec_api_prefix)
-  local path
-  path=$(echo "$url" | sed -E "
-    s|https?://[^/]+${api_prefix}||
-    s|/[0-9]+/|/{administration_id}/|
-    s|/[0-9]+\\.json|/{id}.json|
-    s|\\.json|{format}|
-  ")
+  [[ -z "${ROUTE_SPEC_PATH:-}" ]] && return 0
 
   local wrapper
-  wrapper=$(spec_query --arg p "$path" '
+  wrapper=$(spec_query --arg p "$ROUTE_SPEC_PATH" '
     (.paths[$p] // {}) | to_entries[]
     | select(.value.requestBody // null | . != null)
     | .value.requestBody.content | to_entries[0].value.schema.properties
@@ -244,7 +233,7 @@ request_handle_response() {
       if [[ -n "$response" && "$response" != "null" ]]; then
         output_format "$response"
       elif [[ "$http_code" == "204" ]]; then
-        [[ -n "$OPT_VERBOSE" ]] && echo "Success (no content)" >&2
+        [[ -n "$OPT_VERBOSE" ]] && echo "Success (no content)" >&2 || true
       fi
       ;;
     401)
