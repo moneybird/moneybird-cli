@@ -92,6 +92,7 @@ BODY
   local response
   response=$(curl -s -X POST "${host}/oauth/token" \
     -H "Content-Type: application/x-www-form-urlencoded" \
+    -H "User-Agent: moneybird-cli/$VERSION" \
     -d @"$body_file")
   rm -f "$body_file"
 
@@ -253,6 +254,7 @@ BODY
   local response
   response=$(curl -s -X POST "${host}/oauth/token" \
     -H "Content-Type: application/x-www-form-urlencoded" \
+    -H "User-Agent: moneybird-cli/$VERSION" \
     -d @"$body_file")
   rm -f "$body_file"
 

@@ -24,6 +24,7 @@ request_curl() {
   auth_file=$(request_tmpfile)
   chmod 600 "$auth_file"
   printf 'header = "Authorization: Bearer %s"\n' "$token" > "$auth_file"
+  printf 'header = "User-Agent: moneybird-cli/%s"\n' "$VERSION" >> "$auth_file"
 
   curl -K "$auth_file" "$@"
 }
