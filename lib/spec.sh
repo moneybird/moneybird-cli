@@ -72,8 +72,12 @@ spec_update() {
 
 # Derive the API base path from the spec's servers field
 spec_api_prefix() {
+  if [[ ! -f "$SPEC_FILE" ]]; then
+    echo "/api/v2"
+    return
+  fi
   local prefix
-  prefix=$(jq -r '.servers[0].url // "https://moneybird.com/api/v2"' "$SPEC_FILE" 2>/dev/null)
+  prefix=$(jq -r '.servers[0].url // "https://moneybird.com/api/v2"' "$SPEC_FILE")
   # Strip the host, keep only the path portion
   echo "$prefix" | sed -E 's|https?://[^/]+||'
 }
