@@ -23,7 +23,6 @@ Global options:
   --output <mode>         Output format: raw, pretty (default), table
   --fields <f1,f2,...>    Return only specified fields (supports nested: contact.company_name)
   --select <jq_expr>      Filter response with a jq expression
-  --all                   Auto-paginate and return all results
   --verbose               Show debug information
   --dry-run               Show the request without executing
   --help                  Show help

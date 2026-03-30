@@ -8,7 +8,6 @@ SPEC_MAX_AGE=86400 # 24 hours
 
 spec_ensure() {
   if [[ ! -f "$SPEC_FILE" ]]; then
-    echo "No cached spec found. Fetching..." >&2
     spec_update
     return $?
   fi
@@ -37,7 +36,6 @@ spec_update() {
   local tmp_file headers_file
   tmp_file=$(mktemp)
   headers_file=$(mktemp)
-  trap 'rm -f "$tmp_file" "$headers_file"' RETURN
 
   local http_code
   http_code=$(curl -s -w "%{http_code}" -o "$tmp_file" -D "$headers_file" \
@@ -47,17 +45,20 @@ spec_update() {
   if [[ "$http_code" == "304" ]]; then
     [[ -n "$OPT_VERBOSE" ]] && echo "Spec is up to date." >&2
     touch "$SPEC_FILE"
+    rm -f "$tmp_file" "$headers_file"
     return 0
   fi
 
   if [[ "$http_code" != "200" ]]; then
     echo "Error: Failed to fetch spec (HTTP $http_code)" >&2
+    rm -f "$tmp_file" "$headers_file"
     return 1
   fi
 
   # Validate it's valid JSON
   if ! jq '.' "$tmp_file" > /dev/null 2>&1; then
     echo "Error: Fetched spec is not valid JSON" >&2
+    rm -f "$tmp_file" "$headers_file"
     return 1
   fi
 
@@ -67,7 +68,8 @@ spec_update() {
   [[ -n "$new_etag" ]] && echo "$new_etag" > "$SPEC_ETAG_FILE"
 
   mv "$tmp_file" "$SPEC_FILE"
-  echo "Spec updated successfully." >&2
+  rm -f "$headers_file"
+  [[ -n "${OPT_VERBOSE:-}" ]] && echo "Spec updated." >&2 || true
 }
 
 # Derive the API base path from the spec's servers field

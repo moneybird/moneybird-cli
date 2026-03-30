@@ -75,7 +75,6 @@ Custom actions (like `send_invoice`, `register_payment`, `archive`) are discover
 | `--output <mode>` | Output format: `raw`, `pretty` (default), `table` |
 | `--fields <f1,f2>` | Return only specified fields (supports nested: `contact.company_name`) |
 | `--select <jq>` | Filter response with a jq expression |
-| `--all` | Auto-paginate and return all results |
 | `--dry-run` | Show the request without executing |
 | `--verbose` | Show debug information |
 | `--administration <id>` | Override the current administration |
@@ -106,8 +105,8 @@ moneybird-cli contacts create --company_name "Acme Corp" --email "info@acme.com"
 # Send an invoice via email
 moneybird-cli sales_invoices send_invoice 123456 --delivery_method Email
 
-# Fetch all invoices (auto-paginate)
-moneybird-cli sales_invoices list --all --fields id,invoice_id,total_price_incl_tax
+# Paginate manually
+moneybird-cli sales_invoices list --page 2 --per_page 100
 
 # Filter with jq
 moneybird-cli contacts list --select '[.[] | select(.company_name | test("Acme"))]'

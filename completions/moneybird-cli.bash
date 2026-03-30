@@ -9,14 +9,14 @@ _moneybird_cli() {
   local spec_file="$config_dir/openapi.json"
 
   # Global flags
-  local global_opts="--dev --administration --output --fields --select --all --verbose --dry-run --help --version --child-id"
+  local global_opts="--dev --administration --output --fields --select --verbose --dry-run --help --version --child-id"
   local builtin_cmds="login logout administrations administration update-spec config"
 
   # Position of resource/action in words (skip global flags)
   local resource="" action="" pos=0
   for ((i = 1; i < cword; i++)); do
     case "${words[i]}" in
-      --dev|--all|--verbose|--dry-run|--help|--version) ;;
+      --dev|--verbose|--dry-run|--help|--version) ;;
       --administration|--output|--fields|--select|--child-id) ((i++)) ;;
       --*) ((i++)) ;;  # skip --param value pairs
       *)

@@ -11,7 +11,6 @@ _moneybird_cli() {
     '--output[Output format]:mode:(raw pretty table)'
     '--fields[Return only specified fields]:fields:'
     '--select[Filter with jq expression]:expression:'
-    '--all[Auto-paginate all results]'
     '--verbose[Show debug info]'
     '--dry-run[Show request without executing]'
     '--help[Show help]'

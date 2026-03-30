@@ -25,7 +25,6 @@ OPT_VERBOSE=""
 OPT_DRY_RUN=""
 OPT_SELECT=""
 OPT_FIELDS=""
-OPT_ALL=""
 OPT_CHILD_ID=""
 
 # Parse global flags (before resource/action)
@@ -44,8 +43,6 @@ while [[ $# -gt 0 ]]; do
       OPT_SELECT="$2"; shift 2 ;;
     --fields)
       OPT_FIELDS="$2"; shift 2 ;;
-    --all)
-      OPT_ALL=1; shift ;;
     --verbose)
       OPT_VERBOSE=1; shift ;;
     --dry-run)
@@ -151,12 +148,7 @@ main() {
       spec_ensure
       route_resolve "$RESOURCE" "$ACTION" "$ID" || exit 1
 
-      # Auto-paginate with --all for GET list endpoints
-      if [[ -n "$OPT_ALL" && "$ROUTE_METHOD" == "GET" ]]; then
-        request_paginate "$ROUTE_URL" ${PARAMS[@]+"${PARAMS[@]}"}
-      else
-        request_execute "$ROUTE_METHOD" "$ROUTE_URL" ${PARAMS[@]+"${PARAMS[@]}"}
-      fi
+      request_execute "$ROUTE_METHOD" "$ROUTE_URL" ${PARAMS[@]+"${PARAMS[@]}"}
       ;;
   esac
 }

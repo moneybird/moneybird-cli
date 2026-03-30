@@ -78,79 +78,24 @@ request_execute() {
   local response
   response=$(cat "$response_file")
 
-  request_cleanup
-
+  REQUEST_HEADERS_FILE="$headers_file"
   request_handle_response "$http_code" "$response" "$method" "$url" ${params[@]+"${params[@]}"}
 }
 
-# Auto-paginate: fetch all pages and merge results
-request_paginate() {
-  local base_url="$1"
-  shift
-  local params=()
-  [[ $# -gt 0 ]] && params=("$@")
-
-  local token
-  token=$(oauth_get_token) || return 1
-
-  local all_results="[]"
-  local page=1
-  local per_page=100
-
-  while true; do
-    local url="${base_url}"
-    local qp="page=${page}&per_page=${per_page}"
-
-    if [[ ${#params[@]} -gt 0 ]]; then
-      local i=0
-      while (( i < ${#params[@]} )); do
-        local key="${params[$i]}"
-        local value="${params[$((i+1))]}"
-        key="${key#--}"
-        qp+="&${key}=$(request_urlencode "$value")"
-        i=$((i + 2))
-      done
-    fi
-    url="${url}?${qp}"
-
-    [[ -n "$OPT_VERBOSE" ]] && echo ">>> GET $url (page $page)" >&2
-
-    trap 'request_cleanup' RETURN
-
-    local headers_file response_file
-    headers_file=$(request_tmpfile)
-    response_file=$(request_tmpfile)
-
-    local http_code
-    http_code=$(request_curl "$token" -s -X GET \
-      -H "Content-Type: application/json" \
-      -D "$headers_file" \
-      -o "$response_file" \
-      -w "%{http_code}" \
-      "$url")
-
-    local response
-    response=$(cat "$response_file")
-    request_cleanup
-
-    if [[ ! "$http_code" =~ ^2 ]]; then
-      request_handle_response "$http_code" "$response" "GET" "$url"
-      return $?
-    fi
-
-    local count
-    count=$(echo "$response" | jq 'if type == "array" then length else 0 end')
-    all_results=$(echo "$all_results" "$response" | jq -s '.[0] + .[1]')
-
-    [[ -n "$OPT_VERBOSE" ]] && echo ">>> Page $page: $count items" >&2
-
-    if (( count < per_page )); then
-      break
-    fi
-    page=$((page + 1))
-  done
-
-  output_format "$all_results"
+# Extract Retry-After value from a curl-dumped headers file.
+# Returns the number of seconds to wait, or empty if header is missing.
+# The Moneybird API returns Retry-After as a Unix timestamp (epoch seconds).
+request_parse_retry_after() {
+  local headers_file="$1"
+  local value
+  value=$(grep -i '^retry-after:' "$headers_file" 2>/dev/null | head -1 | tr -d '\r' | awk '{print $2}')
+  if [[ -n "$value" && "$value" =~ ^[0-9]+$ ]]; then
+    local now
+    now=$(date +%s)
+    local delta=$(( value - now ))
+    (( delta < 0 )) && delta=0
+    echo "$delta"
+  fi
 }
 
 request_build_params() {
@@ -257,8 +202,13 @@ request_handle_response() {
       return 1
       ;;
     429)
-      echo "Error: Rate limited (429)" >&2
-      echo "Try again later." >&2
+      local retry_after
+      retry_after=$(request_parse_retry_after "${REQUEST_HEADERS_FILE:-}")
+      if [[ -n "$retry_after" ]]; then
+        echo "Error: Rate limited (429). Retry after ${retry_after}s." >&2
+      else
+        echo "Error: Rate limited (429)." >&2
+      fi
       return 1
       ;;
     *)
