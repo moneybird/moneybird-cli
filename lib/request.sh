@@ -35,10 +35,16 @@ request_execute() {
   local params=()
   [[ $# -gt 0 ]] && params=("$@")
 
+  # Validate params before building
+  VALIDATED_PARAMS=(${params[@]+"${params[@]}"})
+  if [[ ${#VALIDATED_PARAMS[@]} -gt 0 ]]; then
+    request_warn_undeclared_params
+  fi
+
   # Build request body or query params
   local body="" query_params=""
-  if [[ ${#params[@]} -gt 0 ]]; then
-    request_build_params "$method" "$url" ${params[@]+"${params[@]}"}
+  if [[ ${#VALIDATED_PARAMS[@]} -gt 0 ]]; then
+    request_build_params "$method" "$url" ${VALIDATED_PARAMS[@]+"${VALIDATED_PARAMS[@]}"}
     body="$REQUEST_BODY"
     query_params="$REQUEST_QUERY"
   fi
@@ -96,6 +102,80 @@ request_parse_retry_after() {
     (( delta < 0 )) && delta=0
     echo "$delta"
   fi
+}
+
+# Get the list of declared query parameter names for the current endpoint
+request_spec_query_params() {
+  [[ -z "${ROUTE_SPEC_PATH:-}" || ! -f "$SPEC_FILE" ]] && return 0
+
+  local method_lower
+  method_lower=$(echo "${ROUTE_METHOD:-}" | tr '[:upper:]' '[:lower:]')
+  [[ -z "$method_lower" ]] && return 0
+
+  spec_query --arg p "$ROUTE_SPEC_PATH" --arg m "$method_lower" '
+    . as $root
+    | ((.paths[$p].parameters // []) + (.paths[$p][$m].parameters // []))
+    | map(if has("$ref") then
+        (."$ref" | ltrimstr("#/") | split("/")) as $parts
+        | $root | getpath($parts)
+      else . end)
+    | map(select(.in == "query"))[]
+    | .name
+  ' 2>/dev/null
+}
+
+# Get the list of declared body parameter names for the current endpoint
+request_spec_body_params() {
+  [[ -z "${ROUTE_SPEC_PATH:-}" || ! -f "$SPEC_FILE" ]] && return 0
+
+  local method_lower
+  method_lower=$(echo "${ROUTE_METHOD:-}" | tr '[:upper:]' '[:lower:]')
+  [[ -z "$method_lower" ]] && return 0
+
+  spec_query --arg p "$ROUTE_SPEC_PATH" --arg m "$method_lower" '
+    .paths[$p][$m]
+    | select(.requestBody // null | . != null)
+    | .requestBody.content | to_entries[0].value.schema.properties
+    | to_entries[]
+    | .value.properties // {}
+    | keys[]
+  ' 2>/dev/null
+}
+
+# Warn about params that aren't declared in the spec for this endpoint
+request_warn_undeclared_params() {
+  [[ -z "${ROUTE_SPEC_PATH:-}" || ! -f "$SPEC_FILE" ]] && return 0
+
+  local method="${ROUTE_METHOD:-GET}"
+
+  # Collect declared parameter names
+  local -a declared_params=()
+  if [[ "$method" == "GET" || "$method" == "DELETE" ]]; then
+    while IFS= read -r name; do
+      [[ -n "$name" ]] && declared_params+=("$name")
+    done < <(request_spec_query_params)
+  else
+    while IFS= read -r name; do
+      [[ -n "$name" ]] && declared_params+=("$name")
+    done < <(request_spec_body_params)
+  fi
+
+  # Nothing to check if spec declares no params (may be incomplete)
+  [[ ${#declared_params[@]} -eq 0 ]] && return 0
+
+  local i=0
+  while (( i < ${#VALIDATED_PARAMS[@]} )); do
+    local key="${VALIDATED_PARAMS[$i]}"
+    key="${key#--}"
+    local found=0
+    for dp in "${declared_params[@]}"; do
+      [[ "$dp" == "$key" ]] && { found=1; break; }
+    done
+    if [[ "$found" -eq 0 ]]; then
+      echo "Warning: --${key} is not a recognized parameter for this endpoint (ignored by API)" >&2
+    fi
+    i=$((i + 2))
+  done
 }
 
 request_build_params() {
