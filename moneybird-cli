@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION="0.1"
+VERSION=$(git -C "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)" rev-parse --short HEAD 2>/dev/null || echo "dev")
 
 # Resolve the directory where this script lives (follow symlinks)
 SOURCE="${BASH_SOURCE[0]}"
@@ -13,7 +13,7 @@ done
 CLI_DIR="$(cd "$(dirname "$SOURCE")" && pwd)"
 
 # Source library files
-for lib in config oauth spec router request output help; do
+for lib in config oauth spec router request output help update; do
   source "$CLI_DIR/lib/${lib}.sh"
 done
 
@@ -92,6 +92,10 @@ check_deps() {
 main() {
   check_deps
 
+  # Check for updates (background fetch + hint)
+  update_hint
+  update_check_background
+
   # No arguments or --help at top level
   if [[ -z "$RESOURCE" || "$RESOURCE" == "--help" ]]; then
     help_global
@@ -99,6 +103,9 @@ main() {
   fi
 
   case "$RESOURCE" in
+    update)
+      cmd_update
+      ;;
     login)
       if [[ "$ACTION" == "--help" ]]; then
         echo "Usage: moneybird-cli login [token]"
