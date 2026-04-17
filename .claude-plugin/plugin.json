@@ -1,0 +1,13 @@
+{
+  "name": "moneybird-cli",
+  "version": "0.1.0",
+  "description": "Moneybird API command-line interface with authentication, CRUD operations, and dynamic OpenAPI-driven commands",
+  "author": {
+    "name": "Moneybird",
+    "url": "https://www.moneybird.com"
+  },
+  "homepage": "https://github.com/moneybird/moneybird-cli",
+  "repository": "https://github.com/moneybird/moneybird-cli",
+  "license": "MIT",
+  "keywords": ["moneybird", "accounting", "invoicing", "api", "cli"]
+}

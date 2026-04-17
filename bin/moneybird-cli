@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# Plugin wrapper — delegates to the CLI at the plugin root.
+# When installed as a Claude Code plugin, this file is on PATH,
+# while the main script and lib/ files live one level up.
+set -euo pipefail
+
+# Resolve this script's real location (follows symlinks)
+SOURCE="${BASH_SOURCE[0]}"
+while [[ -L "$SOURCE" ]]; do
+  BIN_DIR="$(cd "$(dirname "$SOURCE")" && pwd)"
+  SOURCE="$(readlink "$SOURCE")"
+  [[ "$SOURCE" != /* ]] && SOURCE="$BIN_DIR/$SOURCE"
+done
+BIN_DIR="$(cd "$(dirname "$SOURCE")" && pwd)"
+PLUGIN_ROOT="$(cd "$BIN_DIR/.." && pwd)"
+
+exec "$PLUGIN_ROOT/moneybird-cli" "$@"

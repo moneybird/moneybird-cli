@@ -2,7 +2,14 @@
 # Zsh completion for moneybird-cli
 
 _moneybird_cli() {
-  local config_dir="${MONEYBIRD_CONFIG_DIR:-$HOME/.config/moneybird-cli}"
+  local config_dir
+  if [[ -n "${MONEYBIRD_CONFIG_DIR:-}" ]]; then
+    config_dir="$MONEYBIRD_CONFIG_DIR"
+  elif [[ -d ".moneybird-cli" ]]; then
+    config_dir="$PWD/.moneybird-cli"
+  else
+    config_dir="$HOME/.config/moneybird-cli"
+  fi
   local spec_file="$config_dir/openapi.json"
 
   local -a global_opts=(
