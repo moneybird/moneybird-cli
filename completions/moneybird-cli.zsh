@@ -17,7 +17,7 @@ _moneybird_cli() {
     '--version[Show version]'
   )
 
-  local -a builtin_cmds=(login logout administrations administration update-spec config)
+  local -a builtin_cmds=(login logout administrations administration update update-spec config)
 
   # Get resources from spec
   local -a resources=($builtin_cmds)

@@ -10,7 +10,7 @@ _moneybird_cli() {
 
   # Global flags
   local global_opts="--dev --administration --output --fields --select --verbose --dry-run --help --version --child-id"
-  local builtin_cmds="login logout administrations administration update-spec config"
+  local builtin_cmds="login logout administrations administration update update-spec config"
 
   # Position of resource/action in words (skip global flags)
   local resource="" action="" pos=0

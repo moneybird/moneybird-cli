@@ -13,6 +13,7 @@ Built-in commands:
   administration current  Show current administration
   administration use <id> Switch to another administration
   completion <bash|zsh>   Output shell completion script
+  update                  Update moneybird-cli to the latest version
   update-spec             Update the cached OpenAPI spec
   config set <key> <val>  Set a configuration value
   config get <key>        Get a configuration value
