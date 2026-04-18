@@ -88,3 +88,20 @@ spec_query() {
   # Pass all arguments through to jq (supports --arg, etc.)
   jq -r "$@" "$SPEC_FILE"
 }
+
+# List CRUD-able sub-types of a resource (e.g. documents → general_documents, receipts, ...).
+# A sub-type is a literal path segment that has an /{id}{format} endpoint.
+spec_resource_subtypes() {
+  local resource="$1"
+  spec_query --arg r "$resource" '
+    .paths | keys[]
+    | capture("^/\\{administration_id\\}/" + $r + "/(?<sub>[a-z_]+)/\\{id\\}\\{format\\}$")
+    | .sub
+  ' 2>/dev/null | sort -u
+}
+
+# True when the resource is a namespace with CRUD-able sub-types but no direct endpoints.
+spec_is_namespace() {
+  local resource="$1"
+  [[ -n "$(spec_resource_subtypes "$resource")" ]]
+}

@@ -50,15 +50,25 @@ _moneybird_cli() {
         *)
           if [[ -f "$spec_file" ]]; then
             local resource_path="${words[2]//\.//}"
-            local custom
-            custom=$(jq -r --arg r "$resource_path" '
+            local subtypes
+            subtypes=$(jq -r --arg r "$resource_path" '
               .paths | keys[]
-              | select(test("/" + $r + "/"))
-              | split("/") | last
-              | sub("\\{format\\}$"; "")
-              | select(. != "{id}" and . != $r and length > 0)
+              | capture("^/\\{administration_id\\}/" + $r + "/(?<sub>[a-z_]+)/\\{id\\}\\{format\\}$")
+              | .sub
             ' "$spec_file" 2>/dev/null | sort -u)
-            [[ -n "$custom" ]] && actions+=($=custom)
+            if [[ -n "$subtypes" ]]; then
+              actions=($=subtypes)
+            else
+              local custom
+              custom=$(jq -r --arg r "$resource_path" '
+                .paths | keys[]
+                | select(test("/" + $r + "/"))
+                | split("/") | last
+                | sub("\\{format\\}$"; "")
+                | select(. != "{id}" and . != $r and length > 0)
+              ' "$spec_file" 2>/dev/null | sort -u)
+              [[ -n "$custom" ]] && actions+=($=custom)
+            fi
           fi
           ;;
       esac

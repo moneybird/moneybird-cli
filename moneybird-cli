@@ -137,6 +137,19 @@ main() {
       cmd_administration "$ACTION" "$ID"
       ;;
     *)
+      # Ensure spec is available for namespace resolution and help
+      spec_ensure
+
+      # Namespace shift: `documents general_documents get <id>` → `documents.general_documents get <id>`
+      if [[ -n "$ACTION" && "$ACTION" != "--help" ]] \
+         && spec_is_namespace "$RESOURCE" \
+         && spec_resource_subtypes "$RESOURCE" | grep -qx "$ACTION"; then
+        RESOURCE="${RESOURCE}.${ACTION}"
+        ACTION="${POSITIONAL[2]:-}"
+        ID="${POSITIONAL[3]:-}"
+        POSITIONAL=("$RESOURCE" ${ACTION:+"$ACTION"} ${ID:+"$ID"} "${POSITIONAL[@]:4}")
+      fi
+
       # Help for resource or action
       if [[ "$ACTION" == "--help" ]]; then
         help_resource "$RESOURCE"
@@ -152,7 +165,6 @@ main() {
       fi
 
       # Dynamic API call
-      spec_ensure
       route_resolve "$RESOURCE" "$ACTION" "$ID" || exit 1
 
       request_execute "$ROUTE_METHOD" "$ROUTE_URL" ${PARAMS[@]+"${PARAMS[@]}"}

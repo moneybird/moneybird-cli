@@ -72,6 +72,16 @@ _moneybird_cli() {
     if [[ -f "$spec_file" ]]; then
       local resource_path
       resource_path=$(echo "$resource" | sed 's/\./\//g')
+      # Namespace sub-types (e.g. documents → general_documents, receipts, ...)
+      local subtypes
+      subtypes=$(jq -r --arg r "$resource_path" '
+        .paths | keys[]
+        | capture("^/\\{administration_id\\}/" + $r + "/(?<sub>[a-z_]+)/\\{id\\}\\{format\\}$")
+        | .sub
+      ' "$spec_file" 2>/dev/null | sort -u)
+      if [[ -n "$subtypes" ]]; then
+        actions="$subtypes"
+      fi
       local custom
       custom=$(jq -r --arg r "$resource_path" '
         .paths | keys[]
@@ -80,7 +90,7 @@ _moneybird_cli() {
         | sub("\\{format\\}$"; "")
         | select(. != "{id}" and . != $r and length > 0)
       ' "$spec_file" 2>/dev/null | sort -u)
-      [[ -n "$custom" ]] && actions="$actions $custom"
+      [[ -n "$custom" && -z "$subtypes" ]] && actions="$actions $custom"
     fi
     # Built-in sub-commands
     case "$resource" in

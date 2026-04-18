@@ -50,10 +50,43 @@ help_list_resources() {
   done
 }
 
+help_namespace() {
+  local resource="$1"
+  echo "Usage: moneybird-cli $resource <type> <action> [args...] [--param value...]"
+  echo ""
+  echo "$resource groups multiple resource types. Pick a type to see its actions."
+  echo ""
+  echo "Types:"
+  local subtype summary
+  while IFS= read -r subtype; do
+    [[ -z "$subtype" ]] && continue
+    summary=$(spec_query --arg p "/{administration_id}/${resource}/${subtype}{format}" \
+      '.paths[$p].get.summary // .paths[$p].post.summary // empty' 2>/dev/null)
+    if [[ -n "$summary" ]]; then
+      printf "  %-30s %s\n" "$subtype" "$summary"
+    else
+      printf "  %s\n" "$subtype"
+    fi
+  done <<< "$(spec_resource_subtypes "$resource")"
+  echo ""
+  echo "Examples:"
+  local first_type
+  first_type=$(spec_resource_subtypes "$resource" | head -1)
+  echo "  moneybird-cli $resource $first_type list"
+  echo "  moneybird-cli $resource $first_type get <id>"
+  echo "  moneybird-cli $resource $first_type --help"
+  echo ""
+}
+
 help_resource() {
   local resource="$1"
   local resource_path
   resource_path=$(echo "$resource" | sed 's/\./\//g')
+
+  if [[ -f "$SPEC_FILE" ]] && spec_is_namespace "$resource"; then
+    help_namespace "$resource"
+    return
+  fi
 
   echo "Usage: moneybird-cli $resource <action> [args...] [--param value...]"
   echo ""
