@@ -5,7 +5,14 @@ _moneybird_cli() {
   local cur prev words cword
   _init_completion || return
 
-  local config_dir="${MONEYBIRD_CONFIG_DIR:-$HOME/.config/moneybird-cli}"
+  local config_dir
+  if [[ -n "${MONEYBIRD_CONFIG_DIR:-}" ]]; then
+    config_dir="$MONEYBIRD_CONFIG_DIR"
+  elif [[ -d ".moneybird-cli" ]]; then
+    config_dir="$PWD/.moneybird-cli"
+  else
+    config_dir="$HOME/.config/moneybird-cli"
+  fi
   local spec_file="$config_dir/openapi.json"
 
   # Global flags
