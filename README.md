@@ -137,7 +137,11 @@ moneybird-cli contacts create --company_name "Acme"
 
 ## Configuration
 
-Config is stored in `~/.config/moneybird-cli/`:
+Config directory is resolved in this order:
+
+1. `MONEYBIRD_CONFIG_DIR` environment variable (explicit override)
+2. `.moneybird-cli/` in the current working directory (auto-detected)
+3. `~/.config/moneybird-cli/` (default)
 
 | File | Purpose |
 |------|---------|
@@ -146,6 +150,40 @@ Config is stored in `~/.config/moneybird-cli/`:
 | `openapi.json` | Cached API spec |
 
 Override the config directory with `MONEYBIRD_CONFIG_DIR`.
+
+## Using with Claude Code and Claude Cowork
+
+This repository is also a [Claude Code plugin](https://code.claude.com/docs/en/plugins-reference). Installing it makes `moneybird-cli` available on PATH inside Claude Code and Cowork sessions, and bundles a skill that teaches Claude how to use it.
+
+### Install as a plugin
+
+```bash
+claude plugin install moneybird-cli@<marketplace>
+```
+
+Or, for development, point Claude Code at the repo directly:
+
+```bash
+claude --plugin-dir /path/to/moneybird-cli
+```
+
+Once installed, `moneybird-cli` is invokable as a bare command in any Bash tool call, and the bundled skill at `skills/moneybird-cli/` will guide Claude in using it.
+
+### Authentication inside Cowork
+
+The Cowork VM has no access to your host `~/.config/moneybird-cli/`. Two options:
+
+- **Copy config into the workspace**: `cp -r ~/.config/moneybird-cli/ /path/to/workspace/.moneybird-cli/`. The CLI auto-detects `.moneybird-cli/` in the current directory. Preserves all sessions and supports switching administrations. Re-copy if you re-authenticate on the host.
+- **Log in inside the session**: run `moneybird-cli login <token>` in the Cowork terminal. Session persists for the life of the session.
+
+### Plugin contents
+
+| Path | Purpose |
+|------|---------|
+| `.claude-plugin/plugin.json` | Plugin manifest |
+| `bin/moneybird-cli` | Wrapper added to PATH — forwards to the main script |
+| `moneybird-cli` + `lib/` | The CLI itself |
+| `skills/moneybird-cli/SKILL.md` | Skill that explains the CLI to Claude |
 
 ## Shell completion
 

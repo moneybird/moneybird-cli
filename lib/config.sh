@@ -1,7 +1,17 @@
 #!/usr/bin/env bash
 # Config management for moneybird-cli
 
-CONFIG_DIR="${MONEYBIRD_CONFIG_DIR:-$HOME/.config/moneybird-cli}"
+# Config directory resolution order:
+# 1. MONEYBIRD_CONFIG_DIR env var (explicit override)
+# 2. .moneybird-cli/ relative to CWD (Cowork-friendly auto-detect)
+# 3. ~/.config/moneybird-cli/ (default)
+if [[ -n "${MONEYBIRD_CONFIG_DIR:-}" ]]; then
+  CONFIG_DIR="$MONEYBIRD_CONFIG_DIR"
+elif [[ -d ".moneybird-cli" ]]; then
+  CONFIG_DIR="$PWD/.moneybird-cli"
+else
+  CONFIG_DIR="$HOME/.config/moneybird-cli"
+fi
 CONFIG_FILE="$CONFIG_DIR/config.json"
 
 config_init() {
