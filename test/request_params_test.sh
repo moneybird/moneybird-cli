@@ -84,6 +84,61 @@ VALIDATED_PARAMS=("--anything" "goes")
 stderr=$(request_warn_undeclared_params 2>&1)
 assert_equals "no warning without spec path" "" "$stderr"
 
+# --- Wrapper key detection ---
+echo ""
+echo "Wrapper key detection:"
+
+echo "  -- Wrapped endpoint (POST contacts) --"
+ROUTE_SPEC_PATH="/{administration_id}/contacts{format}"
+ROUTE_METHOD="POST"
+wrapper=$(request_find_wrapper_key)
+assert_equals "uses 'contact' wrapper" "contact" "$wrapper"
+
+echo ""
+echo "  -- Flat endpoint (PATCH link_booking) --"
+ROUTE_SPEC_PATH="/{administration_id}/financial_mutations/{id}/link_booking{format}"
+ROUTE_METHOD="PATCH"
+wrapper=$(request_find_wrapper_key)
+assert_equals "no wrapper for flat schema" "" "$wrapper"
+
+echo ""
+echo "  -- Body building respects flat schema --"
+ROUTE_SPEC_PATH="/{administration_id}/financial_mutations/{id}/link_booking{format}"
+ROUTE_METHOD="PATCH"
+request_build_params "PATCH" "http://example.test" \
+  "--booking_type" "LedgerAccount" \
+  "--booking_id" "123" \
+  "--price" "10.00"
+outer_keys=$(echo "$REQUEST_BODY" | jq -r 'keys | join(",")')
+assert_equals "top-level keys are flat" "booking_id,booking_type,price" "$outer_keys"
+
+echo ""
+echo "  -- Body building wraps when schema wraps --"
+ROUTE_SPEC_PATH="/{administration_id}/contacts{format}"
+ROUTE_METHOD="POST"
+request_build_params "POST" "http://example.test" \
+  "--firstname" "Alice"
+wrapped_firstname=$(echo "$REQUEST_BODY" | jq -r '.contact.firstname')
+assert_equals "wraps under 'contact'" "Alice" "$wrapped_firstname"
+
+# --- Flat-endpoint param validation ---
+echo ""
+echo "Flat-endpoint param validation:"
+
+echo "  -- Known flat param produces no warning --"
+ROUTE_SPEC_PATH="/{administration_id}/financial_mutations/{id}/link_booking{format}"
+ROUTE_METHOD="PATCH"
+VALIDATED_PARAMS=("--booking_type" "LedgerAccount" "--booking_id" "123")
+stderr=$(request_warn_undeclared_params 2>&1)
+assert_equals "no warning for declared flat params" "" "$stderr"
+
+echo ""
+echo "  -- Unknown flat param warns --"
+VALIDATED_PARAMS=("--booking_type" "LedgerAccount" "--garbage" "x")
+stderr=$(request_warn_undeclared_params 2>&1)
+assert_contains "warns about unknown flat param" "$stderr" "--garbage is not a recognized parameter"
+assert_not_contains "no warning for valid flat param" "$stderr" "--booking_type"
+
 # --- Summary ---
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
