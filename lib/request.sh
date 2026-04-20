@@ -124,7 +124,9 @@ request_spec_query_params() {
   ' 2>/dev/null
 }
 
-# Get the list of declared body parameter names for the current endpoint
+# Get the list of declared body parameter names for the current endpoint.
+# Handles both wrapped schemas ({contact: {properties: {...}}}) and flat
+# schemas (e.g. link_booking, which lists booking_type/booking_id/... directly).
 request_spec_body_params() {
   [[ -z "${ROUTE_SPEC_PATH:-}" || ! -f "$SPEC_FILE" ]] && return 0
 
@@ -135,10 +137,11 @@ request_spec_body_params() {
   spec_query --arg p "$ROUTE_SPEC_PATH" --arg m "$method_lower" '
     .paths[$p][$m]
     | select(.requestBody // null | . != null)
-    | .requestBody.content | to_entries[0].value.schema.properties
-    | to_entries[]
-    | .value.properties // {}
-    | keys[]
+    | .requestBody.content | to_entries[0].value.schema.properties // {}
+    | if (to_entries | length == 1) and (to_entries[0].value.properties != null)
+      then to_entries[0].value.properties | keys[]
+      else keys[]
+      end
   ' 2>/dev/null
 }
 
@@ -229,15 +232,27 @@ request_build_params() {
   fi
 }
 
+# A wrapper key exists when the request schema has exactly one top-level
+# property and that property is itself an object with nested properties
+# (e.g. {contact: {properties: {firstname: ...}}}). Flat schemas such as
+# link_booking — which list booking_type/booking_id/price directly — must
+# not be wrapped, otherwise the API rejects the payload.
 request_find_wrapper_key() {
   [[ -z "${ROUTE_SPEC_PATH:-}" ]] && return 0
 
+  local method_lower
+  method_lower=$(echo "${ROUTE_METHOD:-}" | tr '[:upper:]' '[:lower:]')
+  [[ -z "$method_lower" ]] && return 0
+
   local wrapper
-  wrapper=$(spec_query --arg p "$ROUTE_SPEC_PATH" '
-    (.paths[$p] // {}) | to_entries[]
-    | select(.value.requestBody // null | . != null)
-    | .value.requestBody.content | to_entries[0].value.schema.properties
-    | keys[0] // empty
+  wrapper=$(spec_query --arg p "$ROUTE_SPEC_PATH" --arg m "$method_lower" '
+    .paths[$p][$m]
+    | select(.requestBody // null | . != null)
+    | .requestBody.content | to_entries[0].value.schema.properties // {}
+    | to_entries
+    | select(length == 1) | .[0]
+    | select(.value.properties != null)
+    | .key
   ' 2>/dev/null | head -1)
 
   echo "$wrapper"
