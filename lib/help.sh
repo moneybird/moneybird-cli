@@ -277,10 +277,12 @@ help_action() {
       .paths[$p][$m]
       | select(.requestBody // null | . != null)
       | .requestBody.content | to_entries[0].value.schema.properties
+      | if (to_entries | length == 1) and (to_entries[0].value.properties != null)
+        then to_entries[0].value.properties
+        else .
+        end
       | to_entries[]
-      | .value.properties // {}
-      | to_entries[]
-      | "  --\(.key) <\(.value.type // "string")>\t\(.value.description // "")"
+      | "  --\(.key) <\(if .value.format == "binary" then "file" else (.value.type // "string") end)>\t\(.value.description // "")"
     ' 2>/dev/null | head -30 || true)
   fi
 

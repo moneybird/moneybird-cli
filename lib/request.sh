@@ -41,9 +41,21 @@ request_execute() {
     request_warn_undeclared_params
   fi
 
-  # Build request body or query params
+  # Detect request body content type (empty for GET/DELETE or endpoints
+  # without a request body). Multipart endpoints take a different code path:
+  # the file bytes must be uploaded as form data, not stringified into JSON.
+  local content_type=""
+  if [[ "$method" != "GET" && "$method" != "DELETE" ]]; then
+    content_type=$(request_spec_content_type)
+  fi
+
   local body="" query_params=""
-  if [[ ${#VALIDATED_PARAMS[@]} -gt 0 ]]; then
+  local -a form_args=()
+
+  if [[ "$content_type" == "multipart/form-data" ]]; then
+    request_build_form_args ${VALIDATED_PARAMS[@]+"${VALIDATED_PARAMS[@]}"} || return 1
+    form_args=(${REQUEST_FORM_ARGS[@]+"${REQUEST_FORM_ARGS[@]}"})
+  elif [[ ${#VALIDATED_PARAMS[@]} -gt 0 ]]; then
     request_build_params "$method" "$url" ${VALIDATED_PARAMS[@]+"${VALIDATED_PARAMS[@]}"}
     body="$REQUEST_BODY"
     query_params="$REQUEST_QUERY"
@@ -53,7 +65,16 @@ request_execute() {
 
   if [[ -n "$OPT_DRY_RUN" ]]; then
     echo "$method $url"
-    [[ -n "$body" ]] && echo "$body" | jq '.'
+    if [[ ${#form_args[@]} -gt 0 ]]; then
+      echo "Content-Type: multipart/form-data"
+      local i=0
+      while (( i < ${#form_args[@]} )); do
+        [[ "${form_args[$i]}" == "-F" ]] && echo "  ${form_args[$((i+1))]}"
+        i=$((i + 2))
+      done
+    elif [[ -n "$body" ]]; then
+      echo "$body" | jq '.'
+    fi
     return 0
   fi
 
@@ -71,13 +92,18 @@ request_execute() {
   local curl_args=(
     -s
     -X "$method"
-    -H "Content-Type: application/json"
     -D "$headers_file"
     -o "$response_file"
     -w "%{http_code}"
   )
 
-  [[ -n "$body" ]] && curl_args+=(-d "$body")
+  if [[ ${#form_args[@]} -gt 0 ]]; then
+    # Let curl set Content-Type with the correct multipart boundary.
+    curl_args+=("${form_args[@]}")
+  else
+    curl_args+=(-H "Content-Type: application/json")
+    [[ -n "$body" ]] && curl_args+=(-d "$body")
+  fi
 
   local http_code
   http_code=$(request_curl "$token" "${curl_args[@]}" "$url")
@@ -121,6 +147,41 @@ request_spec_query_params() {
       else . end)
     | map(select(.in == "query"))[]
     | .name
+  ' 2>/dev/null
+}
+
+# Return the primary content type of the request body for the current endpoint
+# (e.g. application/json, multipart/form-data). Empty when there's no body.
+request_spec_content_type() {
+  [[ -z "${ROUTE_SPEC_PATH:-}" || ! -f "$SPEC_FILE" ]] && return 0
+
+  local method_lower
+  method_lower=$(echo "${ROUTE_METHOD:-}" | tr '[:upper:]' '[:lower:]')
+  [[ -z "$method_lower" ]] && return 0
+
+  spec_query --arg p "$ROUTE_SPEC_PATH" --arg m "$method_lower" '
+    .paths[$p][$m]
+    | select(.requestBody // null | . != null)
+    | .requestBody.content | keys[0] // empty
+  ' 2>/dev/null
+}
+
+# Return names of request body fields declared with format: binary.
+# On multipart endpoints these are the slots that take a file path.
+request_spec_binary_fields() {
+  [[ -z "${ROUTE_SPEC_PATH:-}" || ! -f "$SPEC_FILE" ]] && return 0
+
+  local method_lower
+  method_lower=$(echo "${ROUTE_METHOD:-}" | tr '[:upper:]' '[:lower:]')
+  [[ -z "$method_lower" ]] && return 0
+
+  spec_query --arg p "$ROUTE_SPEC_PATH" --arg m "$method_lower" '
+    .paths[$p][$m]
+    | select(.requestBody // null | . != null)
+    | .requestBody.content | to_entries[0].value.schema.properties // {}
+    | to_entries[]
+    | select(.value.format == "binary")
+    | .key
   ' 2>/dev/null
 }
 
@@ -261,6 +322,43 @@ request_find_wrapper_key() {
 request_urlencode() {
   local string="$1"
   jq -rn --arg s "$string" '$s | @uri'
+}
+
+# Build curl -F args for a multipart/form-data endpoint. Binary fields
+# (format: binary in the spec) are uploaded from the given path using curl's
+# @path syntax; plain fields are passed as-is. Fails if a declared file path
+# doesn't exist on disk — otherwise curl would upload a zero-byte "file".
+request_build_form_args() {
+  local params=("$@")
+  REQUEST_FORM_ARGS=()
+
+  local -a binary_fields=()
+  while IFS= read -r name; do
+    [[ -n "$name" ]] && binary_fields+=("$name")
+  done < <(request_spec_binary_fields)
+
+  local i=0
+  while (( i < ${#params[@]} )); do
+    local key="${params[$i]}"
+    local value="${params[$((i+1))]}"
+    key="${key#--}"
+
+    local is_binary=0
+    for bf in ${binary_fields[@]+"${binary_fields[@]}"}; do
+      [[ "$bf" == "$key" ]] && { is_binary=1; break; }
+    done
+
+    if (( is_binary )); then
+      if [[ ! -f "$value" ]]; then
+        echo "Error: file not found: $value" >&2
+        return 1
+      fi
+      REQUEST_FORM_ARGS+=(-F "${key}=@${value}")
+    else
+      REQUEST_FORM_ARGS+=(-F "${key}=${value}")
+    fi
+    i=$((i + 2))
+  done
 }
 
 request_handle_response() {
