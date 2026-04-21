@@ -139,6 +139,50 @@ stderr=$(request_warn_undeclared_params 2>&1)
 assert_contains "warns about unknown flat param" "$stderr" "--garbage is not a recognized parameter"
 assert_not_contains "no warning for valid flat param" "$stderr" "--booking_type"
 
+# --- Multipart/form-data endpoints ---
+echo ""
+echo "Multipart endpoints:"
+
+echo "  -- JSON endpoint is not multipart --"
+ROUTE_SPEC_PATH="/{administration_id}/contacts{format}"
+ROUTE_METHOD="POST"
+ct=$(request_spec_content_type)
+assert_not_contains "content type for contacts POST is not multipart" "$ct" "multipart"
+
+echo ""
+echo "  -- Attachment endpoint reports multipart/form-data --"
+ROUTE_SPEC_PATH="/{administration_id}/documents/receipts/{id}/attachments{format}"
+ROUTE_METHOD="POST"
+ct=$(request_spec_content_type)
+assert_equals "content type for attachments POST" "multipart/form-data" "$ct"
+
+echo ""
+echo "  -- Binary fields on attachment endpoint --"
+binary=$(request_spec_binary_fields | tr '\n' ',' | sed 's/,$//')
+assert_equals "file is a binary field" "file" "$binary"
+
+echo ""
+echo "  -- No binary fields on JSON endpoint --"
+ROUTE_SPEC_PATH="/{administration_id}/contacts{format}"
+ROUTE_METHOD="POST"
+binary=$(request_spec_binary_fields | tr '\n' ',' | sed 's/,$//')
+assert_equals "no binary fields on contacts POST" "" "$binary"
+
+echo ""
+echo "  -- Form args upload binary fields with @path --"
+ROUTE_SPEC_PATH="/{administration_id}/documents/receipts/{id}/attachments{format}"
+ROUTE_METHOD="POST"
+tmp_file=$(mktemp)
+request_build_form_args "--file" "$tmp_file"
+assert_equals "first form arg is -F" "-F" "${REQUEST_FORM_ARGS[0]}"
+assert_equals "file field uses @path syntax" "file=@${tmp_file}" "${REQUEST_FORM_ARGS[1]}"
+rm -f "$tmp_file"
+
+echo ""
+echo "  -- Missing file path errors out --"
+stderr=$(request_build_form_args "--file" "/nonexistent/does-not-exist.png" 2>&1) || true
+assert_contains "errors on missing file" "$stderr" "file not found"
+
 # --- Summary ---
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
