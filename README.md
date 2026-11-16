@@ -40,6 +40,12 @@ moneybird-cli administration list
 moneybird-cli administration use <id>
 ```
 
+Or target one administration for a single command, without changing the current one. The CLI uses the token you logged in with for that administration:
+
+```bash
+moneybird-cli --administration <id> contacts list
+```
+
 ### 2. Start using the API
 
 ```bash

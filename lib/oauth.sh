@@ -225,7 +225,7 @@ oauth_refresh() {
   local sessions_file
   sessions_file=$(config_sessions_file)
   local admin_id
-  admin_id=$(jq -r '.current // empty' "$sessions_file")
+  admin_id=$(sessions_active_id)
 
   local refresh_token
   refresh_token=$(jq -r --arg id "$admin_id" '.sessions[$id].refresh_token // empty' "$sessions_file")
